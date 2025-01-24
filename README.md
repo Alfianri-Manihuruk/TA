@@ -15,7 +15,9 @@ This research proposes a driver drowsiness detection based on Convolutional Neur
 The data utilized in this research falls under the category of secondary data with video format (avi). This data source comes from **YAWDD: YAWNING DETECTION DATASET**.
 
 ## Lisensi
-Lisensi ini mengikuti [MIT License](https://opensource.org/licenses/MIT). 
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT). See the full text below:
+
+
 
 
 
