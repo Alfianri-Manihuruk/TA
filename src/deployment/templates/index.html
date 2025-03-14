@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title style="text-align: center;">Driver Monitoring System</title>
+
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #2A5C82;
+            --secondary: #5DA9E9;
+            --danger: #FF6B6B;
+            --warning: #FFD93D;
+            --success: #6BCB77;
+            --background: #F5F7FA;
+            --text: #2D3748;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 2rem;
+            background: var(--background);
+            color: var(--text);
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 2rem;
+        }
+
+        .video-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        .analytics-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        #videoFeed {
+            width: 100%;
+            border-radius: 0.75rem;
+            aspect-ratio: 16/9;
+            background: #1A202C;
+            transition: opacity 0.3s;
+        }
+
+        .controls {
+            margin-top: 1.5rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .status-box {
+            padding: 1.5rem;
+            border-radius: 1rem;
+            margin-bottom: 1.5rem;
+            background: var(--background);
+        }
+
+        .confidence-meter {
+            height: 12px;
+            background: #E2E8F0;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+
+        #confidenceBar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--secondary), var(--primary));
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .chart-container {
+            height: 200px;
+            margin-top: 2rem;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border-radius: 1rem;
+            z-index: 100;
+        }
+
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+            
+            #videoFeed {
+                aspect-ratio: 4/3;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1 style="margin-bottom: 2rem; color: var(--primary);">Driver Monitoring System</h1>
+    
+    <div class="dashboard">
+        <div class="video-card">
+            <div class="loading-overlay" id="loading">
+                <div class="loading-spinner"></div>
+            </div>
+            <img id="videoFeed">
+            <div class="controls">
+                <button class="btn btn-primary" onclick="toggleCamera(true)">
+                    <span class="material-icons">play_arrow</span>
+                    Mulai
+                </button>
+                <button class="btn btn-danger" onclick="toggleCamera(false)">
+                    <span class="material-icons">stop</span>
+                    Hentikan
+                </button>
+            </div>
+        </div>
+
+        <div class="analytics-card">
+            <div class="status-box">
+                <h3 style="margin-bottom: 1rem;">Status Pengemudi</h3>
+                <div id="driverStatus" class="status-content">
+                    <p style="color: var(--text-secondary);">Menunggu data...</p>
+                </div>
+                <div class="confidence-meter">
+                    <div id="confidenceBar"></div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chart;
+        let eventSource;
+        const loadingOverlay = document.getElementById('loading');
+        const videoFeed = document.getElementById('videoFeed');
+        const confidenceBar = document.getElementById('confidenceBar');
+        const driverStatus = document.getElementById('driverStatus');
+
+        // Initialize Chart
+        function initChart() {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Tingkat Keyakinan',
+                        data: [],
+                        borderColor: '#2A5C82',
+                        tension: 0.4,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 1,
+                            ticks: {
+                                callback: value => `${(value * 100).toFixed(0)}%`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update UI with new prediction
+        function updateUI(data) {
+            if (!data || !data.class) return;
+
+            // Update status text
+            driverStatus.innerHTML = `
+                <div style="padding: 1rem; background: ${getStatusColor(data.class)}20; border-radius: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <span class="material-icons" style="color: ${getStatusColor(data.class)}">${getStatusIcon(data.class)}</span>
+                        <h4 style="margin: 0; color: ${getStatusColor(data.class)}">${data.class}</h4>
+                    </div>
+                    <p style="margin: 0; font-size: 1.2rem; font-weight: bold; color: ${getStatusColor(data.class)}">
+                        ${(data.confidence * 100).toFixed(1)}%
+                    </p>
+                </div>
+            `;
+
+            // Update confidence bar
+            confidenceBar.style.width = `${data.confidence * 100}%`;
+
+            // Update chart
+            if(chart.data.labels.length > 15) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+            }
+            chart.data.labels.push(new Date().toLocaleTimeString());
+            chart.data.datasets[0].data.push(data.confidence);
+            chart.update();
+        }
+
+        // Helper functions
+        function getStatusColor(status) {
+            const colors = {
+                'Mengantuk & Menguap': 'var(--danger)',
+                'Mengantuk & Tidak Menguap': 'var(--warning)',
+                'Menguap & Tidak Mengantuk': 'var(--success)'
+            };
+            return colors[status] || 'var(--text)';
+        }
+
+        function getStatusIcon(status) {
+            const icons = {
+                'Mengantuk & Menguap': 'warning',
+                'Mengantuk & Tidak Menguap': 'error',
+                'Menguap & Tidak Mengantuk': 'check_circle'
+            };
+            return icons[status] || 'help';
+        }
+
+        // Camera control
+        async function toggleCamera(start) {
+            loadingOverlay.style.display = 'flex';
+            
+            try {
+                const response = await fetch(start ? '/start' : '/stop', {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) throw new Error('Gagal mengontrol kamera');
+                
+                if(start) {
+                    videoFeed.src = "{{ url_for('video_feed') }}";
+                    startEventSource();
+                } else {
+                    if(eventSource) eventSource.close();
+                    videoFeed.src = '';
+                    chart.data.labels = [];
+                    chart.data.datasets[0].data = [];
+                    chart.update();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        // SSE for predictions
+        function startEventSource() {
+            if(eventSource) eventSource.close();
+            
+            eventSource = new EventSource('/prediction_updates');
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    updateUI(data);
+                } catch (error) {
+                    console.error('Error parsing data:', error);
+                }
+            };
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            videoFeed.onerror = () => {
+                videoFeed.src = '';
+                alert('Kamera tidak dapat diakses!');
+            };
+        });
+    </script>
+</body>
+</html>
